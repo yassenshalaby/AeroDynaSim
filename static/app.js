@@ -491,10 +491,11 @@ async function loadClosestSTL() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                params:    state.currentParams,
-                body_code: state.selectedBodyType.body_code,
-                underbody: state.underbody || 'S',
-                wheels:    state.wheels    || 'WWC',
+                params:        state.currentParams,
+                body_code:     state.selectedBodyType.body_code,
+                underbody:     state.underbody || 'S',
+                wheels:        state.wheels    || 'WWC',
+                changed_param: state.lastChangedParam || null,
             })
         });
         data = await res.json();
@@ -663,6 +664,7 @@ function updateParam(key) {
     const slider = document.getElementById(`slider-${key}`);
     const value = parseFloat(slider.value);
     state.currentParams[key] = value;
+    state.lastChangedParam = key;   // tell KNN which param to boost
 
     // Update display
     const paramDef = state.paramDefs.find(p => p.key === key);
@@ -671,7 +673,7 @@ function updateParam(key) {
         display.textContent = `${value.toFixed(2)}${paramDef.unit}`;
     }
 
-    // Animate 3D car part morph
+    // Update 3D car
     update3DCar();
 }
 

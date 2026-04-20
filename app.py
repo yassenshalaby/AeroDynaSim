@@ -448,62 +448,61 @@ def config_folder_prefix(body_code, underbody='S', wheels='WWC'):
     return f"{b}_S_{w}_WM"
 
 
-def find_closest_design(params, body_code=None, underbody='S', wheels='WWC'):
+def find_closest_design(params, body_code=None, underbody='S', wheels='WWC', changed_param=None):
     """
     Find the closest DrivAerNet design based on geometric parameters.
     Filters by body type, underbody, and wheel configuration.
     Returns the design's Cd, Cl_f, Cl_r values, and experiment ID.
+
+    If changed_param is set, that parameter gets 10x weight in the distance
+    calculation so slider movements reliably trigger visible mesh changes.
     """
     data = load_drivaernet_data()
 
     prefix = config_folder_prefix(body_code or 'N', underbody, wheels) + '_'
 
-    min_distance = float('inf')
-    closest_design = None
+    # Collect all matching designs for this body/underbody/wheels config
+    candidates = [row for row in data if row.get("Experiment", "").startswith(prefix)]
 
-    for row in data:
-        exp = row.get("Experiment", "")
-        # Filter to only designs matching the exact body+underbody+wheels config
-        if not exp.startswith(prefix):
-            continue
+    if not candidates:
+        # Fallback: just match body code
+        candidates = [row for row in data if row.get("Experiment", "").startswith((body_code or 'N').upper() + "_")]
 
-        # Normalised Euclidean distance in parameter space
-        distance = 0
+    if not candidates:
+        return {"cd": 0.30, "cl_f": -0.05, "cl_r": 0.05, "experiment_id": "default"}
+
+    def full_distance(row):
+        """Standard 23D normalised Euclidean distance."""
+        d = 0
         for param_def in PARAM_DEFS:
             key = param_def["key"]
             try:
-                design_val = float(row.get(key, 0))
-                user_val = params.get(key, design_val)
+                dv = float(row.get(key, 0))
+                uv = params.get(key, dv)
                 norm = PARAM_STDS.get(key, 50.0)
-                distance += ((design_val - user_val) / norm) ** 2
+                d += ((dv - uv) / norm) ** 2
             except (ValueError, TypeError):
-                continue
+                pass
+        return d ** 0.5
 
-        distance = distance ** 0.5
-        if distance < min_distance:
-            min_distance = distance
-            closest_design = row
+    if changed_param:
+        # Two-stage: find 15 designs closest in the moved-slider's dimension,
+        # then pick the best full-distance among those.
+        # This guarantees slider movement always produces visible mesh transitions.
+        user_val = params.get(changed_param, 0.0)
+        norm = PARAM_STDS.get(changed_param, 50.0)
+        candidates.sort(key=lambda r: abs(float(r.get(changed_param, 0)) - user_val) / norm)
+        shortlist = candidates[:15]
+        closest_design = min(shortlist, key=full_distance)
+    else:
+        closest_design = min(candidates, key=full_distance)
 
-    if closest_design:
-        return {
-            "cd": round(float(closest_design["Average Cd"]), 4),
-            "cl_f": round(float(closest_design["Average Cl_f"]), 4),
-            "cl_r": round(float(closest_design["Average Cl_r"]), 4),
-            "experiment_id": closest_design["Experiment"],
-        }
-
-    # Fallback — try again with just body code (ignore underbody/wheels)
-    for row in data:
-        if body_code and not row.get("Experiment", "").startswith(body_code.upper() + "_"):
-            continue
-        return {
-            "cd": round(float(row["Average Cd"]), 4),
-            "cl_f": round(float(row["Average Cl_f"]), 4),
-            "cl_r": round(float(row["Average Cl_r"]), 4),
-            "experiment_id": row["Experiment"],
-        }
-
-    return {"cd": 0.30, "cl_f": -0.05, "cl_r": 0.05, "experiment_id": "default"}
+    return {
+        "cd": round(float(closest_design["Average Cd"]), 4),
+        "cl_f": round(float(closest_design["Average Cl_f"]), 4),
+        "cl_r": round(float(closest_design["Average Cl_r"]), 4),
+        "experiment_id": closest_design["Experiment"],
+    }
 
 
 def load_drivaernet_summary():
@@ -1080,14 +1079,16 @@ def api_suggestions():
 def api_closest_mesh():
     """Return the nearest matching STL URL based on geometric params via KNN."""
     payload = request.get_json()
-    body_code = payload.get("body_code", "N").upper()
-    params    = payload.get("params", {})
-    underbody = payload.get("underbody", "S")
-    wheels    = payload.get("wheels", "WWC")
+    body_code     = payload.get("body_code", "N").upper()
+    params        = payload.get("params", {})
+    underbody     = payload.get("underbody", "S")
+    wheels        = payload.get("wheels", "WWC")
+    changed_param = payload.get("changed_param", None)  # boosted in KNN distance
 
     # For 3D visuals always use smooth underbody + closed wheels (S/WWC) —
     # underbody and wheels affect Cd output only, not the mesh shown.
-    closest = find_closest_design(params, body_code, underbody='S', wheels='WWC')
+    closest = find_closest_design(params, body_code, underbody='S', wheels='WWC',
+                                  changed_param=changed_param)
     experiment_id = closest.get("experiment_id")
 
     if not experiment_id or experiment_id == "default":
