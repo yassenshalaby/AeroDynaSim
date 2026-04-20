@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lap Time Simulator</title>
+    <link rel="stylesheet" href="/static/style.css?v=4.4">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,400;1,700&family=Orbitron:wght@400;700;900&display=swap"
+        rel="stylesheet">
+    <script src="/static/three.min.js"></script>
+    <script src="/static/OrbitControls.js"></script>
+    <script src="/static/STLLoader.js"></script>
+</head>
+
+<body>
+    <!-- Header -->
+    <header class="app-header">
+        <div class="logo-section">
+            <h1 class="app-title">LAP TIME SIMULATOR</h1>
+        </div>
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="statusText">Ready</span>
+        </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="body-type" onclick="switchTab('body-type')">
+            🚗 Body Type
+        </button>
+        <button class="tab-btn" data-tab="customize" onclick="switchTab('customize')">
+            🔧 Customize
+        </button>
+        <button class="tab-btn" data-tab="track" onclick="switchTab('track')">
+            🏁 Track
+        </button>
+        <button class="tab-btn" data-tab="results" onclick="switchTab('results')">
+            📊 Results
+        </button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="app-main">
+
+        <!-- Body Type Selection — cards hardcoded so they always show -->
+        <section id="tab-body-type" class="tab-content active">
+            <h2>Select Body Type</h2>
+            <p class="section-desc">Choose a base vehicle to modify</p>
+            <div id="bodyTypeGrid" class="body-grid">
+                <div class="body-card" onclick="selectBodyType('N')" id="body-N">
+                    <div class="body-icon">🚗</div>
+                    <div class="body-name">Sedan</div>
+                    <div class="body-stats">
+                        <div class="stat">Cd: <span class="val">0.278</span></div>
+                        <div class="stat">Cl_f: <span class="val">-0.048</span></div>
+                        <div class="stat">Cl_r: <span class="val">0.047</span></div>
+                    </div>
+                </div>
+                <div class="body-card" onclick="selectBodyType('E')" id="body-E">
+                    <div class="body-icon">🚙</div>
+                    <div class="body-name">Wagon</div>
+                    <div class="body-stats">
+                        <div class="stat">Cd: <span class="val">0.296</span></div>
+                        <div class="stat">Cl_f: <span class="val">-0.076</span></div>
+                        <div class="stat">Cl_r: <span class="val">-0.042</span></div>
+                    </div>
+                </div>
+                <div class="body-card" onclick="selectBodyType('F')" id="body-F">
+                    <div class="body-icon">🏎️</div>
+                    <div class="body-name">Fastback</div>
+                    <div class="body-stats">
+                        <div class="stat">Cd: <span class="val">0.274</span></div>
+                        <div class="stat">Cl_f: <span class="val">-0.053</span></div>
+                        <div class="stat">Cl_r: <span class="val">0.074</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Customization -->
+        <section id="tab-customize" class="tab-content">
+            <h2>Customize Aerodynamics</h2>
+            <p class="section-desc">Adjust 25 parameters (23 geometric + underbody + wheels) to modify your car</p>
+
+            <!-- Categorical configuration selectors -->
+            <div class="categorical-selectors">
+                <div class="cat-selector">
+                    <label class="cat-label">🔩 Underbody</label>
+                    <select id="underbodySelect" class="cat-select" onchange="updateUnderbody(this.value)">
+                        <option value="S">Smooth (baseline)</option>
+                        <option value="D">Detailed (+0.026 Cd)</option>
+                    </select>
+                </div>
+                <div class="cat-selector">
+                    <label class="cat-label">🛞 Wheels</label>
+                    <select id="wheelsSelect" class="cat-select" onchange="updateWheels(this.value)">
+                        <option value="WWC">Closed Cover (baseline)</option>
+                        <option value="WW">Open Detailed (+0.001 Cd)</option>
+                        <option value="WWS">Open Smooth (−0.004 Cd)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="customize-layout">
+                <!-- Left: Parameters -->
+                <div class="params-panel">
+                    <div id="parameterGroups">
+                        <div
+                            style="padding: 2rem; color: var(--text-muted); text-align: center; border: 1px dashed var(--border-glass); border-radius: 8px; margin-top: 1rem;">
+                            ⚠️ Please choose a car from the Body Type tab first to load the sliders!
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Center: 3D Visualizer -->
+                <div class="visualizer-panel">
+                    <div id="car3dCanvas" class="car-3d-container"></div>
+                    <div id="confidenceWidget" class="confidence-widget" style="display:none;">
+                        <div class="conf-row">
+                            <span class="conf-dot" id="confDot"></span>
+                            <span class="conf-label" id="confLabel">—</span>
+                            <span class="conf-score" id="confScore"></span>
+                        </div>
+                        <div class="conf-bar-track">
+                            <div class="conf-bar-fill" id="confBarFill"></div>
+                        </div>
+                        <div class="conf-detail" id="confDetail"></div>
+                    </div>
+                </div>
+
+                <!-- Right: Presets -->
+                <div class="presets-panel">
+                    <h3>Saved Presets</h3>
+                    <div class="preset-actions">
+                        <button class="btn btn-primary" onclick="savePreset()">💾 Save Current</button>
+                        <button class="btn btn-secondary" onclick="resetToStock()">↺ Reset to Stock</button>
+                        <button class="btn btn-accent" onclick="quickAddToSim()">⚡ Quick Add</button>
+                    </div>
+                    <ul id="presetList" class="preset-list"></ul>
+                    <p class="preset-hint">Save at least 2 presets to compare performance</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Track Selection -->
+        <section id="tab-track" class="tab-content">
+            <h2>Select Track</h2>
+            <p class="section-desc">Choose a circuit for your lap time simulation</p>
+            <div id="trackGrid" class="track-grid"></div>
+        </section>
+
+        <!-- Results -->
+        <section id="tab-results" class="tab-content">
+            <h2>Simulation Results</h2>
+
+            <div class="results-header">
+                <button class="btn btn-primary btn-large" onclick="runSimulation()" id="btnSimulate" disabled>
+                    🚀 Run Simulation
+                </button>
+                <button class="btn btn-secondary" onclick="exportCSV()" id="btnExport" disabled>
+                    📥 Export CSV
+                </button>
+                <p id="resultsSubtitle" class="results-subtitle">Configure your car and select a track to begin</p>
+            </div>
+
+            <!-- Best Result Banner -->
+            <div id="bestBanner" class="best-banner" style="display: none;">
+                <div class="best-label">🏆 FASTEST LAP</div>
+                <div class="best-info">
+                    <div class="best-name" id="bestName">Stock</div>
+                    <div class="best-time" id="bestTime">1:36.245</div>
+                </div>
+                <div class="best-improvement" id="bestImprovement"></div>
+            </div>
+
+            <!-- Results Table -->
+            <div class="results-table-container">
+                <table class="results-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Preset Name</th>
+                            <th>Underbody</th>
+                            <th>Wheels</th>
+                            <th>Cd</th>
+                            <th>Cl_F</th>
+                            <th>Cl_R</th>
+                            <th>Lap Time</th>
+                            <th>Delta</th>
+                            <th>vs Stock</th>
+                            <th>Top Speed</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody"></tbody>
+                </table>
+            </div>
+
+            <!-- ML Suggestions Panel — populated after simulation -->
+            <div id="suggestionsPanel" class="suggestions-panel" style="display: none;"></div>
+
+            <!-- Track Visualization -->
+            <div class="viz-section">
+                <h3>Track Visualization</h3>
+                <div class="viz-controls">
+                    <select id="vizPresetSelect" onchange="selectVizPreset()"></select>
+                    <select id="vizPresetSelect2" onchange="selectVizPreset2()"><option value="-1">— Compare —</option></select>
+                    <button class="btn btn-secondary" onclick="toggleVisualization()" id="btnPlayViz">▶ Play</button>
+                </div>
+                <canvas id="trackCanvas" width="800" height="600"></canvas>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <div id="loadingText" class="loading-text">Preparing simulation...</div>
+            <div class="loading-bar-container">
+                <div id="loadingBar" class="loading-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preset Save Modal -->
+    <div id="presetModal" class="modal">
+        <div class="modal-content">
+            <h3>Save Preset</h3>
+            <input type="text" id="presetNameInput" placeholder="Enter preset name..." class="modal-input">
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closePresetModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="confirmSavePreset()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=4.9"></script>
+</body>
+</html>
