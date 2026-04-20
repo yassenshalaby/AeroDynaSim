@@ -1,0 +1,32 @@
+# Large STL mesh directories (too big for GitHub)
+ns/
+ns_decimated/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Claude session data
+.claude/
+
+# Logs
+*.log
+/tmp/
+
+# Models cache (large pkl files — regenerated at startup)
+models/
+
+# Backup files
+*_backup.py
+*_backup.js
+*_v1_backup*
